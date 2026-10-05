@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">20 받기</string>
+    <string name="accessibility_description">사용자가 지정한 위치에서 보라색 원을 감지하면 원 중앙을 자동 터치합니다. 화면 내용이나 입력 내용은 저장하거나 전송하지 않습니다. 앱 또는 알림의 중지 버튼으로 즉시 멈출 수 있습니다.</string>
+</resources>
