@@ -68,6 +68,12 @@ public class MainActivity extends Activity {
         text(root, "전체 화면 공유를 허용하고 대상 앱에서 떠 있는 ‘감지 시작’을 누르세요. ↕ 버튼은 제어 막대를 위/아래로 옮깁니다. 원을 가리지 않게 배치하세요.", 14);
         button(root, "100~200ms 동작 시험 화면", () -> startActivity(new Intent(this, DemoActivity.class)));
         text(root, "OCR·루팅 없이 색상만 감지합니다. 화면은 메모리에서만 처리하고 저장·전송하지 않습니다. 연속 보라색에는 한 번만 터치하며 사라진 뒤 재등장하면 다시 터치합니다. 실제 반응 속도는 기기와 화면 캡처 속도에 따라 달라집니다.", 14);
+        try {
+            String version = getPackageManager().getPackageInfo(getPackageName(), PackageManager.PackageInfoFlags.of(0)).versionName;
+            text(root, "Made by Hwarang · © 2026 · v" + version, 12).setGravity(Gravity.CENTER);
+        } catch (PackageManager.NameNotFoundException ignored) {
+            text(root, "Made by Hwarang · © 2026", 12).setGravity(Gravity.CENTER);
+        }
     }
     private TextView text(LinearLayout root, String value, int size) {
         TextView t = new TextView(this); t.setText(value); t.setTextSize(size);

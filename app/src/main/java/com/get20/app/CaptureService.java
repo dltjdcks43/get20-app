@@ -15,6 +15,7 @@ import android.os.*;
 import android.widget.Toast;
 
 public class CaptureService extends Service {
+    private static final long MAX_FRAME_AGE_NS = 40_000_000L;
     private static final Object STATE = new Object();
     private static volatile CaptureService current;
     public static volatile String status = "중지됨";
@@ -45,12 +46,13 @@ public class CaptureService extends Service {
             if (s == null || !s.active) return;
             s.armTime = System.nanoTime();
             s.armed = value;
+            if (s.detector != null) s.detector.reset();
             status = value ? "감지 중" : "대기 중 · 대상 앱에서 감지 시작을 누르세요";
         }
     }
     public static void stopNow(Context c) {
         synchronized (STATE) {
-            if (current != null) { current.armed = false; current.active = false; }
+            if (current != null) { current.armed = false; current.active = false; if (current.detector != null) current.detector.reset(); }
             status = "중지됨";
         }
         c.stopService(new Intent(c, CaptureService.class));
@@ -108,18 +110,18 @@ public class CaptureService extends Service {
         if (!active) return;
         try (Image image = source.acquireLatestImage()) {
             if (image == null) return;
-            if (!armed) return;
+            if (!armed) { detector.reset(); return; }
             if (Config.rotation(this) != rotation) { fail("화면 방향이 변경되었습니다. 위치를 다시 지정하세요"); return; }
             long timestamp = image.getTimestamp();
             long age = System.nanoTime() - timestamp;
-            if (timestamp <= lastTimestamp || timestamp < armTime || age > 80_000_000L) { stale++; return; }
+            if (timestamp <= lastTimestamp || timestamp < armTime || age > MAX_FRAME_AGE_NS) { stale++; detector.discardFrame(); return; }
             lastTimestamp = timestamp;
             if (seenArmTime != armTime) { detector.reset(); seenArmTime = armTime; }
             if (image.getWidth() != width || image.getHeight() != height) { fail("캡처 좌표가 변경되었습니다"); return; }
             Image.Plane plane = image.getPlanes()[0];
             float fraction = detector.fraction(plane.getBuffer(), width, height, plane.getRowStride(), plane.getPixelStride(), x, y, radius);
             frames++;
-            if (!detector.risingEdge(fraction)) return;
+            if (!detector.risingEdge(fraction, timestamp)) return;
             synchronized (STATE) {
                 if (!active || !armed || seenArmTime != armTime) return;
                 TapService tap = TapService.get();
@@ -129,11 +131,11 @@ public class CaptureService extends Service {
         } catch (RuntimeException e) { fail("프레임 처리 실패: " + e.getClass().getSimpleName()); }
     }
     private void fail(String message) {
-        synchronized (STATE) { active = false; armed = false; status = message; }
+        synchronized (STATE) { active = false; armed = false; if (detector != null) detector.reset(); status = message; }
         main.post(() -> { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); stopSelf(); });
     }
     @Override public void onDestroy() {
-        synchronized (STATE) { active = false; armed = false; if (current == this) current = null; }
+        synchronized (STATE) { active = false; armed = false; if (detector != null) detector.reset(); if (current == this) current = null; }
         TapService tap = TapService.get();
         if (tap != null) tap.removeOverlay();
         worker.post(() -> {

@@ -5,6 +5,9 @@ import java.nio.ByteBuffer;
 /** Allocation-free RGBA region scan. Does not OCR or copy the full frame. */
 public final class PurpleDetector {
     private boolean latched;
+    private static final long MAX_CONFIRM_GAP_NS = 50_000_000L;
+    private int candidateCount;
+    private long candidateTimestamp, lastTimestamp = Long.MIN_VALUE;
     private final float hueMin, hueMax;
 
     public PurpleDetector(float hueMin, float hueMax) {
@@ -43,17 +46,27 @@ public final class PurpleDetector {
         return total == 0 ? 0f : (float) matched / total;
     }
 
-    /** One frame fires. Hysteresis prevents threshold noise from rearming. */
-    public boolean risingEdge(float fraction) {
+    /** Two consecutive fresh purple frames confirm the existing rising edge. */
+    public synchronized boolean risingEdge(float fraction, long timestamp) {
+        if (timestamp <= lastTimestamp) { discardFrame(); return false; }
+        lastTimestamp = timestamp;
         if (latched) {
+            discardFrame();
             if (fraction < 0.08f) latched = false;
             return false;
         }
-        if (fraction >= 0.18f) {
-            latched = true;
-            return true;
+        if (fraction < 0.18f) { discardFrame(); return false; }
+        if (candidateCount == 0 || timestamp - candidateTimestamp > MAX_CONFIRM_GAP_NS) {
+            candidateCount = 1;
+            candidateTimestamp = timestamp;
+            return false;
         }
-        return false;
+        candidateCount++;
+        latched = true;
+        discardFrame();
+        return true;
     }
-    public void reset() { latched = false; }
+    /** A discarded frame breaks confirmation, but must not rearm an existing latch. */
+    public synchronized void discardFrame() { candidateCount = 0; candidateTimestamp = 0; }
+    public synchronized void reset() { latched = false; discardFrame(); lastTimestamp = Long.MIN_VALUE; }
 }
