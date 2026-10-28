@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     };
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        DiagnosticLog.init(this);
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -66,6 +67,15 @@ public class MainActivity extends Activity {
         start = button(root, "시작 · 화면 공유 허용", this::requestStart);
         button(root, "중지", () -> CaptureService.stopNow(this));
         text(root, "전체 화면 공유를 허용하고 대상 앱에서 떠 있는 ‘감지 시작’을 누르세요. ↕ 버튼은 제어 막대를 위/아래로 옮깁니다. 원을 가리지 않게 배치하세요.", 14);
+        text(root, "4. 기기 비교용 진단 로그", 21);
+        text(root, "실행 후 로그를 공유해주세요. 모델·해상도·감지 비율·처리 시간·제스처 완료/취소를 기록합니다. 새 화면 공유를 시작하면 이전 로그가 교체됩니다.", 14);
+        button(root, "진단 로그 보기", this::showLog);
+        button(root, "진단 로그 공유", () -> {
+            Intent share = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(Intent.EXTRA_SUBJECT, "20 받기 진단 로그")
+                    .putExtra(Intent.EXTRA_TEXT, DiagnosticLog.snapshot());
+            startActivity(Intent.createChooser(share, "진단 로그 공유"));
+        });
         button(root, "100~200ms 동작 시험 화면", () -> startActivity(new Intent(this, DemoActivity.class)));
         text(root, "OCR·루팅 없이 색상만 감지합니다. 화면은 메모리에서만 처리하고 저장·전송하지 않습니다. 연속 보라색에는 한 번만 터치하며 사라진 뒤 재등장하면 다시 터치합니다. 실제 반응 속도는 기기와 화면 캡처 속도에 따라 달라집니다.", 14);
         try {
@@ -74,6 +84,17 @@ public class MainActivity extends Activity {
         } catch (PackageManager.NameNotFoundException ignored) {
             text(root, "Made by Hwarang · © 2026", 12).setGravity(Gravity.CENTER);
         }
+    }
+    private void showLog() {
+        String log = DiagnosticLog.snapshot();
+        TextView content = new TextView(this);
+        content.setText(log); content.setTextSize(11); content.setTextIsSelectable(true); content.setPadding(24, 16, 24, 16);
+        ScrollView scroll = new ScrollView(this); scroll.addView(content);
+        new AlertDialog.Builder(this).setTitle("진단 로그").setView(scroll)
+                .setPositiveButton("복사", (dialog, which) -> {
+                    getSystemService(ClipboardManager.class).setPrimaryClip(ClipData.newPlainText("20 받기 진단 로그", log));
+                    Toast.makeText(this, "진단 로그를 복사했습니다", Toast.LENGTH_SHORT).show();
+                }).setNegativeButton("닫기", null).show();
     }
     private TextView text(LinearLayout root, String value, int size) {
         TextView t = new TextView(this); t.setText(value); t.setTextSize(size);

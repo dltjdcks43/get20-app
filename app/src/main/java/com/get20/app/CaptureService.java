@@ -47,12 +47,14 @@ public class CaptureService extends Service {
             s.armTime = System.nanoTime();
             s.armed = value;
             if (s.detector != null) s.detector.reset();
+            DiagnosticLog.event(value ? "ARM" : "PAUSE");
             status = value ? "감지 중" : "대기 중 · 대상 앱에서 감지 시작을 누르세요";
         }
     }
     public static void stopNow(Context c) {
         synchronized (STATE) {
             if (current != null) { current.armed = false; current.active = false; if (current.detector != null) current.detector.reset(); }
+            DiagnosticLog.event("STOP requested");
             status = "중지됨";
         }
         c.stopService(new Intent(c, CaptureService.class));
@@ -75,6 +77,12 @@ public class CaptureService extends Service {
             width = screen.width(); height = screen.height(); rotation = Config.rotation(this);
             var p = Config.prefs(this);
             x = p.getInt("x", 0); y = p.getInt("y", 0); radius = p.getInt("radius", 32);
+            DiagnosticLog.begin(this, "SETTINGS screen=" + width + "x" + height + " rotation=" + rotation
+                    + " densityDpi=" + getResources().getConfiguration().densityDpi
+                    + " refreshHz=" + getSystemService(DisplayManager.class).getDisplay(0).getRefreshRate()
+                    + " center=" + x + "," + y + " radius=" + radius
+                    + " hue=" + p.getInt("hueMin", 260) + ".." + p.getInt("hueMax", 315)
+                    + " maxFrameAgeMs=40 confirmFrames=2 confirmGapMs=50 on=0.18 off=0.08");
             detector = new PurpleDetector(p.getInt("hueMin", 260), p.getInt("hueMax", 315));
             current = this;
             active = true; armed = false;
@@ -114,27 +122,41 @@ public class CaptureService extends Service {
             if (Config.rotation(this) != rotation) { fail("화면 방향이 변경되었습니다. 위치를 다시 지정하세요"); return; }
             long timestamp = image.getTimestamp();
             long age = System.nanoTime() - timestamp;
-            if (timestamp <= lastTimestamp || timestamp < armTime || age > MAX_FRAME_AGE_NS) { stale++; detector.discardFrame(); return; }
+            if (timestamp <= lastTimestamp || timestamp < armTime || age > MAX_FRAME_AGE_NS) { stale++; detector.discardFrame(); DiagnosticLog.frame(timestamp, age, 0, -1f, 1); return; }
             lastTimestamp = timestamp;
             if (seenArmTime != armTime) { detector.reset(); seenArmTime = armTime; }
             if (image.getWidth() != width || image.getHeight() != height) { fail("캡처 좌표가 변경되었습니다"); return; }
             Image.Plane plane = image.getPlanes()[0];
+            long analysisStart = System.nanoTime();
             float fraction = detector.fraction(plane.getBuffer(), width, height, plane.getRowStride(), plane.getPixelStride(), x, y, radius);
             frames++;
-            if (!detector.risingEdge(fraction, timestamp)) return;
+            long analysisNs = System.nanoTime() - analysisStart;
+            if (!detector.risingEdge(fraction, timestamp)) {
+                DiagnosticLog.frame(timestamp, age, analysisNs, fraction, 0); return;
+            }
             synchronized (STATE) {
                 if (!active || !armed || seenArmTime != armTime) return;
                 TapService tap = TapService.get();
                 if (tap == null) { fail("접근성 서비스가 꺼졌습니다"); return; }
-                if (tap.tap(x, y)) taps++; else rejected++;
+                long requestedNs = System.nanoTime();
+                boolean accepted = tap.tap(x, y);
+                if (accepted) taps++; else rejected++;
+                DiagnosticLog.frame(timestamp, age, analysisNs, fraction, 2);
+                DiagnosticLog.event("TRIGGER frame=" + frames + " purple=" + fraction
+                        + " captureToRequestUs=" + (requestedNs - timestamp) / 1000
+                        + " dispatchCallUs=" + (System.nanoTime() - requestedNs) / 1000
+                        + " accepted=" + accepted + " center=" + x + "," + y);
             }
         } catch (RuntimeException e) { fail("프레임 처리 실패: " + e.getClass().getSimpleName()); }
     }
     private void fail(String message) {
+        DiagnosticLog.event("END " + message);
         synchronized (STATE) { active = false; armed = false; if (detector != null) detector.reset(); status = message; }
         main.post(() -> { Toast.makeText(this, message, Toast.LENGTH_LONG).show(); stopSelf(); });
     }
     @Override public void onDestroy() {
+        DiagnosticLog.event("DESTROY analyzed=" + frames + " accepted=" + taps + " rejected=" + rejected + " stale=" + stale);
+        DiagnosticLog.flush();
         synchronized (STATE) { active = false; armed = false; if (detector != null) detector.reset(); if (current == this) current = null; }
         TapService tap = TapService.get();
         if (tap != null) tap.removeOverlay();

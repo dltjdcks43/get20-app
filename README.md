@@ -17,10 +17,10 @@ Android 14 / 15 / 16(API 34~36)용 Java 앱. 루팅·OCR 없이 MediaProjection�
 
 - `ImageReader(RGBA_8888, maxImages=3)`와 전용 `HandlerThread`.
 - 각 콜백에서 `acquireLatestImage()` 한 번만 호출. 오래된 대기 프레임은 버리고, 모든 획득 이미지를 `try-with-resources`로 닫습니다.
-- Surface 캡처의 monotonic timestamp 기준 80ms보다 오래되었거나, 감지 시작 전/이미 처리한 프레임은 버립니다.
+- Surface 캡처의 monotonic timestamp 기준 40ms보다 오래되었거나, 감지 시작 전/이미 처리한 프레임은 버립니다.
 - 비트맵 복사 없이 지정 중심의 디스크 영역을 2픽셀 간격으로 샘플링. 실제 `rowStride`/`pixelStride`를 사용합니다.
 - 기본 HSV Hue 260~315°, saturation ≥ 0.35, value ≥ 65/255. 실제 원의 색에 맞춰 Hue 범위를 조정할 수 있습니다.
-- 영역 내 보라색 비율 ≥ 18%인 **첫 프레임**에서 즉시 1ms 제스처를 요청합니다. 다중 프레임 확인이나 의도적 클릭 지연이 없습니다.
+- 영역 내 보라색 비율 ≥ 18%인 신선한 프레임 2개를 50ms 이내 간격으로 연속 확인한 뒤 1ms 제스처를 요청합니다. 확인 뒤 별도 대기 시간은 없습니다.
 - 비율 < 8%인 프레임을 관측해야 다시 클릭할 수 있습니다. 두 임계값 사이의 흔들림은 중복 클릭을 만들지 않습니다.
 - 제스처가 이미 진행 중이거나 시스템이 요청을 거절하면 클릭을 큐에 쌓거나 뒤늦게 재시도하지 않습니다.
 - 통계의 ‘터치 요청’은 Android가 접수한 dispatchGesture 횟수이며 대상 앱의 성공 횟수와 다를 수 있습니다.
@@ -56,3 +56,15 @@ GitHub Actions는 push / pull_request / 수동 실행마다 테스트·lint·APK
 - [MediaProjection 공식 안내](https://developer.android.com/media/grow/media-projection): 세션마다 사용자 동의, mediaProjection foreground service, callback 등록 후 VirtualDisplay 한 번 생성.
 - [Android 15 foreground service 변경](https://developer.android.com/about/versions/15/changes/foreground-service-types): 부팅 자동 시작 없이 사용자의 화면 동의 후 시작.
 - [AGP 8.13 호환성](https://developer.android.com/build/releases/agp-8-13-0-release-notes): API 36 / Gradle 8.13 / JDK 17.
+
+## v1.2.0 기기 비교 진단 로그
+
+감지 조건은 v1.1.0과 같습니다. 실행 후 메인 화면의 **진단 로그 보기(복사)** 또는 **진단 로그 공유**를 사용하세요. 성공 기기와 실패 기기에서 각각 한 번 실행한 뒤 공유하면 비교할 수 있습니다. 새 화면 공유 세션은 이전 로그를 교체하므로 먼저 공유하세요.
+
+- 모델, Android/앱 버전, 해상도, 밀도, 화면 주사율, 좌표, 반경, Hue, 감지 임계값
+- 최근 1800프레임의 캡처 시각, 프레임 나이, 분석 시간, 보라색 비율, 폐기/트리거 여부
+- 최근 240이벤트: 시작/일시정지/중지, 터치 요청 접수/거절 및 사유, 제스처 완료/취소
+- 프레임 `code`: 0=분석, 1=오래됨·중복·감지 시작 전 프레임 폐기, 2=터치 트리거. 폐기 프레임의 보라색 값 -10000은 미분석을 뜻합니다.
+- 수치만 고정 크기 메모리에 기록하고, 문자열 변환과 앱 내부 파일 저장은 별도 스레드에서 3초 간격 및 종료 시 수행합니다. 갑작스러운 프로세스 종료 시 마지막 미저장 기록은 유실될 수 있습니다.
+- 화면 이미지·화면 텍스트는 저장하지 않습니다. 로그 공유는 사용자가 공유 버튼을 누른 경우에만 가능합니다.
+- Android 제스처 완료는 대상 게임의 20원 획득을 보장하지 않습니다. 대상 앱의 처리 시각은 이 로그로 직접 알 수 없습니다.

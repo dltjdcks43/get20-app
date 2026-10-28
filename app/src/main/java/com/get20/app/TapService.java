@@ -39,19 +39,24 @@ public class TapService extends AccessibilityService {
 
     // Called directly on the analysis thread: no click queue or delayed retry.
     public boolean tap(int x, int y) {
-        if (instance != this || !CaptureService.isArmed() || !busy.compareAndSet(false, true)) return false;
+        if (instance != this) { DiagnosticLog.event("TAP_REJECT service_disconnected"); return false; }
+        if (!CaptureService.isArmed()) { DiagnosticLog.event("TAP_REJECT not_armed"); return false; }
+        if (!busy.compareAndSet(false, true)) { DiagnosticLog.event("TAP_REJECT gesture_busy"); return false; }
+        final long requestNs = System.nanoTime();
         Path path = new Path();
         path.moveTo(x, y);
         GestureDescription gesture = new GestureDescription.Builder()
                 .addStroke(new GestureDescription.StrokeDescription(path, 0, 1)).build();
         try {
             boolean accepted = dispatchGesture(gesture, new GestureResultCallback() {
-                @Override public void onCompleted(GestureDescription g) { busy.set(false); }
-                @Override public void onCancelled(GestureDescription g) { busy.set(false); }
+                @Override public void onCompleted(GestureDescription g) { busy.set(false); DiagnosticLog.event("GESTURE_COMPLETED requestNs=" + requestNs + " elapsedUs=" + (System.nanoTime() - requestNs) / 1000); }
+                @Override public void onCancelled(GestureDescription g) { busy.set(false); DiagnosticLog.event("GESTURE_CANCELLED requestNs=" + requestNs + " elapsedUs=" + (System.nanoTime() - requestNs) / 1000); }
             }, main);
-            if (!accepted) busy.set(false);
+            DiagnosticLog.event("TAP_DISPATCH requestNs=" + requestNs + " accepted=" + accepted);
+            if (!accepted) { busy.set(false); DiagnosticLog.event("TAP_REJECT dispatch_false"); }
             return accepted;
         } catch (RuntimeException e) {
+            DiagnosticLog.event("TAP_EXCEPTION " + e.getClass().getSimpleName());
             busy.set(false);
             return false;
         }
